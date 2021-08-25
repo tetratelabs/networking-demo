@@ -40,9 +40,6 @@ func main() {
 	if len(strings.TrimSpace(systemListenString)) == 0 {
 		systemListenString = "0.0.0.0"
 	}
-	// if systemListenString == "" {
-	// 	systemListenString := "0.0.0.0"
-	// }
 
 	mux := http.NewServeMux()
 	mux.Handle("/proxy/", &HttpDemoHandler{})
