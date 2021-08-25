@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var stylesheet template.HTML = template.HTML(`
@@ -35,9 +36,17 @@ func main() {
 		log.Fatal("invalid required env var PORT")
 	}
 
+	systemListenString := os.Getenv("LISTEN")
+	if len(strings.TrimSpace(systemListenString)) == 0 {
+		systemListenString = "0.0.0.0"
+	}
+	// if systemListenString == "" {
+	// 	systemListenString := "0.0.0.0"
+	// }
+
 	mux := http.NewServeMux()
 	mux.Handle("/proxy/", &HttpDemoHandler{})
 	mux.Handle("/udp-test/", &UDPDemoHandler{})
 	mux.Handle("/", &HomePageHandler{})
-	http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", systemPort), mux)
+	http.ListenAndServe(fmt.Sprintf("%s:%d", systemListenString, systemPort), mux)
 }
