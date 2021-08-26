@@ -1,3 +1,3 @@
-module example-apps/cats-and-dogs/frontend
+module networking-demo/frontend
 
 go 1.16
