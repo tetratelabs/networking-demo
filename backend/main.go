@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type InfoHandler struct {
@@ -38,11 +39,11 @@ var stylesheet template.HTML = template.HTML(`
 `)
 
 type PublicPage struct {
-	Stylesheet       template.HTML
-	OverlayIP        string
-	InstanceIndex    string
-	UserPorts        string
-	UDPPorts         string
+	Stylesheet    template.HTML
+	OverlayIP     string
+	InstanceIndex string
+	UserPorts     string
+	UDPPorts      string
 }
 
 var publicPageTemplate string = `
@@ -76,6 +77,8 @@ var publicPageTemplate string = `
 type CatPage struct {
 	Stylesheet template.HTML
 	Port       int
+	Cluster    string
+	Img        string
 }
 
 var catPageTemplate string = `
@@ -97,9 +100,10 @@ var catPageTemplate string = `
 					</div>
 				</div>
 				<div class="jumbotron">
-					<p class="lead">Hello from the backend, here is a picture of a cat:</p>
-					<p><img src="http://i.imgur.com/1uYroRF.gif" /></p>
-				  <p class="lead">You reached me on port {{.Port}}</p>
+					<p class="lead">Hello from the backend, here is a great picture:</p>
+					<p><img src="{{.Img}}" /></p>
+				  <p class="lead">You reached me on container port {{.Port}}</p>
+				  <p class="lead">I'm on kubernetes cluster:  {{.Cluster}}</p>
 				</div>
 			</div>
 		</div>
@@ -114,11 +118,11 @@ func (h *InfoHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	overlayIP := os.Getenv("CF_INSTANCE_INTERNAL_IP")
 	template := template.Must(template.New("publicPage").Parse(publicPageTemplate))
 	err := template.Execute(resp, PublicPage{
-		Stylesheet:       stylesheet,
-		OverlayIP:        overlayIP,
-		InstanceIndex:    instanceIndex,
-		UserPorts:        h.UserPorts,
-		UDPPorts:         h.UDPPorts,
+		Stylesheet:    stylesheet,
+		OverlayIP:     overlayIP,
+		InstanceIndex: instanceIndex,
+		UserPorts:     h.UserPorts,
+		UDPPorts:      h.UDPPorts,
 	})
 	if err != nil {
 		panic(err)
@@ -132,10 +136,23 @@ type CatHandler struct {
 
 func (h *CatHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	log.Printf("CatHandler: request received from %s", req.RemoteAddr)
+
+	//if we configure it, inject latency
+	latencyStr := os.Getenv("LATENCY")
+	if latencyStr != "" {
+		latency, err := strconv.Atoi(latencyStr)
+		if err != nil {
+			panic(err)
+		}
+		time.Sleep(time.Duration(latency) * time.Second)
+	}
+
 	template := template.Must(template.New("catPage").Parse(catPageTemplate))
 	err := template.Execute(resp, CatPage{
 		Stylesheet: stylesheet,
 		Port:       h.Port,
+		Cluster:    os.Getenv("CLUSTER"),
+		Img:        os.Getenv("IMG"),
 	})
 	if err != nil {
 		panic(err)
@@ -143,13 +160,13 @@ func (h *CatHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	return
 }
 
-func launchCatHandler(port int) {
+func launchCatHandler(listen string, port int) {
 	mux := http.NewServeMux()
 	mux.Handle("/", &CatHandler{
 		Port: port,
 	})
 	httpServer := http.Server{
-		Addr:    fmt.Sprintf("0.0.0.0:%d", port),
+		Addr:    fmt.Sprintf("%s:%d", listen, port),
 		Handler: mux,
 	}
 	httpServer.SetKeepAlivesEnabled(false)
@@ -178,8 +195,8 @@ func handleUDPConnection(connection *net.UDPConn) error {
 	return err
 }
 
-func launchUDPServer(port int) {
-	udpAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%d", port))
+func launchUDPServer(listen string, port int) {
+	udpAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%d", listen, port))
 	if err != nil {
 		panic(err)
 	}
@@ -199,14 +216,14 @@ func launchUDPServer(port int) {
 	}
 }
 
-func launchInfoHandler(port int, userPorts string, udpPorts string) {
+func launchInfoHandler(listen string, port int, userPorts string, udpPorts string) {
 	mux := http.NewServeMux()
 	mux.Handle("/", &InfoHandler{
 		Port:      port,
 		UserPorts: userPorts,
 		UDPPorts:  udpPorts,
 	})
-	http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), mux)
+	http.ListenAndServe(fmt.Sprintf("%s:%d", listen, port), mux)
 }
 
 func main() {
@@ -217,12 +234,17 @@ func main() {
 		log.Fatal("invalid required env var PORT")
 	}
 
+	systemListenString := os.Getenv("LISTEN")
+	if len(strings.TrimSpace(systemListenString)) == 0 {
+		systemListenString = "0.0.0.0"
+	}
+
 	userPorts, err := extractPortNumbers("CATS_PORTS")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 	for _, userPort := range userPorts {
-		go launchCatHandler(userPort)
+		go launchCatHandler(systemListenString, userPort)
 	}
 
 	udpPorts, err := extractPortNumbers("UDP_PORTS")
@@ -230,10 +252,10 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	for _, udpPort := range udpPorts {
-		go launchUDPServer(udpPort)
+		go launchUDPServer(systemListenString, udpPort)
 	}
 
-	launchInfoHandler(systemPort, os.Getenv("CATS_PORTS"), os.Getenv("UDP_PORTS"))
+	launchInfoHandler(systemListenString, systemPort, os.Getenv("CATS_PORTS"), os.Getenv("UDP_PORTS"))
 }
 
 func extractPortNumbers(envVarName string) ([]int, error) {
