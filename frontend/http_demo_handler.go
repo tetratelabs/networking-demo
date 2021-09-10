@@ -59,10 +59,17 @@ func (h *HttpDemoHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request)
 
 	newReq, err := http.NewRequest("GET", destination, nil)
 	newReq.Header.Set("Authorization", bearer)
+	newReq.Header.Set("X-B3-Sampled", "1")
+	newReq.Header.Set("traceID", req.Header.Get("traceID"))
+	newReq.Header.Set("X-B3-Traceid", req.Header.Get("traceID"))
+
 	httpClient := &http.Client{Timeout: time.Second * 5}
 	getResp, err := httpClient.Do(newReq)
 
 	if err != nil {
+		resp.Header().Add("X-B3-Sampled", "1")
+		resp.Header().Add("traceID", req.Header.Get("traceID"))
+		resp.Header().Add("X-B3-Traceid", req.Header.Get("traceID"))
 		template := template.Must(template.New("errorPageTemplate").Parse(errorPageTemplate))
 		err = template.Execute(resp, ErrorPage{
 			Stylesheet: stylesheet,

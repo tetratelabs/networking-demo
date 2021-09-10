@@ -87,6 +87,9 @@ var homePageTemplate string = `
 type HomePageHandler struct{}
 
 func (h *HomePageHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	resp.Header().Add("X-B3-Sampled", "1")
+	resp.Header().Add("traceID", req.Header.Get("traceID"))
+	resp.Header().Add("X-B3-Traceid", req.Header.Get("traceID"))
 	template := template.Must(template.New("homePage").Parse(homePageTemplate))
 	err := template.Execute(resp, HomePage{
 		Stylesheet:  stylesheet,
